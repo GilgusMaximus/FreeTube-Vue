@@ -5,7 +5,7 @@ import FtLoader from '../../components/ft-loader/ft-loader.vue'
 import FtCard from '../../components/ft-card/ft-card.vue'
 import FtElementList from '../../components/ft-element-list/ft-element-list.vue'
 import ytTrendScraper from 'yt-trending-scraper'
-
+import YtSubScraper from 'yt-subscription-count-scraper'
 export default Vue.extend({
   name: 'Search',
   components: {
@@ -109,6 +109,18 @@ export default Vue.extend({
         }
       }
     },
+    testFunction: async function (PromiseArray, dataArray, channelarray) {
+      console.log('WAITING FOR PROMIES')
+      const promiseData = Promise.all(PromiseArray).then((data) => {
+        console.log(data)
+        // channelarray.forEach((index, counter) => {
+        //   console.log("INDEX:", index, "DATA:", data[counter])
+        //   dataArray[index].followers = promiseData[counter]
+        // })
+      })
+
+      return 0
+    },
 
     performSearchLocal: function (payload) {
       if (!payload.nextPage) {
@@ -126,7 +138,9 @@ export default Vue.extend({
         })
 
         const returnDataInvidious = []
-        returnData.forEach((video) => {
+        const promiseArray = []
+        const channelArray = []
+        returnData.forEach((video, index) => {
           if (video.type === 'video') {
             let authId = video.author.ref.match(/user(.)*/)
             let publishDate = null
@@ -163,27 +177,35 @@ export default Vue.extend({
               }
             )
           } else {
+            if (video.type === 'channel') {
+              promiseArray.push(YtSubScraper.scrape_subscriber_count_from_channel(video.link))
+              channelArray.push(index)
+            }
             returnDataInvidious.push(video)
           }
         })
+        // wait till all promises in the array are resolved and then one outer promise continues execution
+        Promise.all(promiseArray).then((resolvedPromises) => {
+          resolvedPromises.forEach((subscriberCount, index) => {
+            returnDataInvidious[channelArray[index]].followers = subscriberCount
+          })
+          if (payload.nextPage) {
+            this.shownResults = this.shownResults.concat(returnDataInvidious)
+          } else {
+            this.shownResults = returnDataInvidious
+          }
 
-        if (payload.nextPage) {
-          this.shownResults = this.shownResults.concat(returnDataInvidious)
-        } else {
-          this.shownResults = returnDataInvidious
-        }
+          this.nextPageRef = result.nextpageRef
+          this.isLoading = false
 
-        this.nextPageRef = result.nextpageRef
-        this.isLoading = false
-
-        const historyPayload = {
-          query: payload.query,
-          data: this.shownResults,
-          searchSettings: this.searchSettings,
-          nextPageRef: result.nextpageRef
-        }
-
-        this.$store.commit('addToSessionSearchHistory', historyPayload)
+          const historyPayload = {
+            query: payload.query,
+            data: this.shownResults,
+            searchSettings: this.searchSettings,
+            nextPageRef: result.nextpageRef
+          }
+          this.$store.commit('addToSessionSearchHistory', historyPayload)
+        })
       }).catch((err) => {
         console.log(err)
         const errorMessage = this.$t('Local API Error (Click to copy)')
